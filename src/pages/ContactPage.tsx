@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MapPin, Phone, Clock3 } from 'lucide-react';
 import { siteConfig } from '../config/site';
+import { supabase } from '../lib/supabase';
 
 export function ContactPage() {
   const [formData, setFormData] = useState({
@@ -11,6 +12,7 @@ export function ContactPage() {
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   const validate = () => {
     const nextErrors: { [key: string]: string } = {};
@@ -23,16 +25,43 @@ export function ContactPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!validate()) {
+      setSubmitStatus('error');
       setSubmitted(false);
       return;
     }
 
-    setSubmitted(true);
-    setFormData({ name: '', email: '', phone: '', message: '' });
+    if (!supabase) {
+      setSubmitStatus('error');
+      setSubmitted(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('contact_requests').insert({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        message: formData.message.trim(),
+        source: 'hk-auto-demo',
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setSubmitted(true);
+      setSubmitStatus('success');
+      setFormData({ name: '', email: '', phone: '', message: '' });
+      setErrors({});
+    } catch (error) {
+      console.error('Supabase contact submission failed:', error);
+      setSubmitted(false);
+      setSubmitStatus('error');
+    }
   };
 
   return (
@@ -106,14 +135,22 @@ export function ContactPage() {
           </div>
 
           <div className="demo-note">
-            Le formulaire est une démonstration locale : aucun service d’envoi n’est configuré pour le moment.
+            {supabase
+              ? 'Le formulaire est connecté à Supabase et enregistre les demandes dans la table contact_requests.'
+              : 'Le formulaire est en mode démo local : aucune clé Supabase n’a été configurée pour l’envoi réel.'}
           </div>
 
           <button type="submit" className="button">
             Envoyer la demande
           </button>
 
-          {submitted && <p className="success-message">Demande de démonstration enregistrée localement.</p>}
+          {submitted && submitStatus === 'success' && (
+            <p className="success-message">Votre demande a bien été enregistrée dans Supabase.</p>
+          )}
+
+          {!submitted && submitStatus === 'error' && (
+            <p className="error-message">Le formulaire n’a pas pu être envoyé. Vérifiez la configuration Supabase ou la validation.</p>
+          )}
         </form>
       </div>
     </section>
